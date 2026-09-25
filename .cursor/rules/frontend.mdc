@@ -1,9 +1,9 @@
 ---
-description: Convenções de UI do Ateliê Bruma — React, tokens, classes e cópia em português
+description: Convenções de UI do Piu Mobile — React, tokens, classes e cópia em português
 alwaysApply: true
 ---
 
-# Frontend Ateliê Bruma
+# Frontend Piu Mobile
 
 React 19, função, `.jsx`. Ícones só de `lucide-react`. Sem nova dependência, router ou store sem pedido.
 
@@ -46,7 +46,7 @@ Erro de cadastro passa por `ErroForm`: `role="alert"`, foco no aviso, `aria-desc
 
 ## Relatórios
 
-A tela é a prévia da planilha, uma lista de destinos e a lista de backups. A prévia é tabela. Os destinos e os backups não viram cartões iguais. Importar agora fica desabilitado até a prévia ter linhas. Erro da planilha e do backup usam `role="alert"` e recebem foco. Restaurar e excluir backup perguntam na própria linha antes de confirmar.
+A tela é a prévia da planilha, uma lista de destinos e a lista de backups. A prévia é tabela. A cronoanálise só sai no arquivo, sem tabela na tela. Os destinos e os backups não viram cartões iguais. Importar agora fica desabilitado até a prévia ter linhas. Erro da planilha e do backup usam `role="alert"` e recebem foco. Restaurar e excluir backup perguntam na própria linha antes de confirmar.
 
 ## Nova demanda
 

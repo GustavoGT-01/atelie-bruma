@@ -1541,7 +1541,8 @@
 }
 
 .rel-actions .btn-primary:disabled,
-.rel-actions .btn-secondary:disabled {
+.rel-actions .btn-secondary:disabled,
+.rel-saida .btn-secondary:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }

@@ -244,7 +244,7 @@ export default function App() {
         {/* Global Topbar */}
         <header className="topbar">
           <div className="topbar-breadcrumbs">
-            <span style={{ color: 'var(--text-muted)' }}>Ateliê Bruma</span>
+            <span style={{ color: 'var(--text-muted)' }}>Piu Mobile</span>
             <span className="crumb-trail">/</span>
             <span className="crumb-trail" style={{ color: '#ffffff', fontWeight: '600', textTransform: 'capitalize' }}>
               {currentTab === 'demandas' && 'Demandas & Tabela'}

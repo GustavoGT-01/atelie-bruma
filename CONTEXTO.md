@@ -1,10 +1,10 @@
-# Ateliê Bruma — descrição do sistema
+# Piu Mobile — descrição do sistema
 
-Ateliê Bruma é o painel de design e engenharia da produção. Organiza demandas por produto, modulação e atividade, aponta tempo no chão e mantém os catálogos que alimentam o fluxo.
+Piu Mobile é o painel de design e engenharia da produção. Organiza demandas por produto, modulação e atividade, aponta tempo no chão e mantém os catálogos que alimentam o fluxo.
 
 Este repositório é só o frontend. Não há API, banco, autenticação real nem router. O lote em uso e o catálogo em uso vivem na memória de `src/App.jsx` e voltam ao exemplo ao recarregar a página. A exceção é o backup: a lista de backups fica no `localStorage` deste navegador, na chave `piu-mobile-backups`.
 
-Interface em português (`pt-BR`). Título da janela: "Ateliê Bruma — Gestão de Demandas & Engenharia".
+Interface em português (`pt-BR`). Título da janela: "Piu Mobile — Gestão de Demandas & Engenharia".
 
 ## Stack
 
@@ -213,6 +213,8 @@ Destinos:
 - Abrir lista: aba Demandas.
 - Abrir eficiência: Visão Geral.
 - Abrir cronograma: aba Cronograma.
+
+Baixar cronoanálise gera `cronoanalise.csv` a partir do lote vivo: tempo apontado, o primeiro número de `tempoEstimado`, a diferença e os motivos de `historicoParadas`. A tela não mostra essas tabelas.
 
 Backups ficam abaixo. Salvar backup grava uma cópia do lote e do catálogo. A lista mostra data, quantidade de demandas e de tipos. Restaurar pede "Restaurar?" na linha e troca o lote e o catálogo abertos. A demanda ativa continua se o id ainda existir; senão fica a primeira do lote restaurado. Excluir pede "Excluir?" e tira só o backup. Se o navegador recusar a gravação, o aviso pede para excluir um backup antigo. Recarregar a página zera o lote em uso e mantém os backups.
 

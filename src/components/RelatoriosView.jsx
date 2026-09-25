@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { CalendarRange, FileDown, LayoutDashboard, ListTodo } from 'lucide-react';
 import { rotuloBackup } from '../backups';
+import { baixarCronoanalise } from '../cronoanalise';
 import { baixarPlanilha, lerPlanilha, montarDemandas } from '../planilha';
 
 const VISIVEIS = 12;
@@ -185,6 +186,21 @@ export default function RelatoriosView({
               <button type="button" className="btn-secondary" onClick={() => baixarPlanilha(demands)}>
                 <FileDown size={16} aria-hidden="true" />
                 Baixar planilha
+              </button>
+            </li>
+            <li className="rel-saida">
+              <div>
+                <strong>Cronoanálise</strong>
+                <p>Tempo apontado, estimado e paradas. Só no arquivo.</p>
+              </div>
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={!demands.length}
+                onClick={() => baixarCronoanalise(demands)}
+              >
+                <FileDown size={16} aria-hidden="true" />
+                Baixar cronoanálise
               </button>
             </li>
             <li className="rel-saida">

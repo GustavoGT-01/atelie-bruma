@@ -1,13 +1,13 @@
 ---
-description: Domínio do Ateliê Bruma — demandas, catálogo, modos e o que o protótipo ainda não faz
+description: Domínio do Piu Mobile — demandas, catálogo, modos e o que o protótipo ainda não faz
 alwaysApply: true
 ---
 
-# Ateliê Bruma
+# Piu Mobile
 
 Leia `CONTEXTO.md` antes de mudar comportamento, dados ou cópia de tela. Este arquivo é a fonte do domínio.
 
-Ateliê Bruma gere demandas de design e engenharia. Frontend só. Estado em memória em `src/App.jsx`. Sem API, banco, router ou login real.
+Piu Mobile gere demandas de design e engenharia. Frontend só. Estado em memória em `src/App.jsx`. Sem API, banco, router ou login real.
 
 ## Preserve
 

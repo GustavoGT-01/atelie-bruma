@@ -35,9 +35,9 @@ export default function Sidebar({
     <aside className="sidebar">
       {/* Brand Header */}
       <div className="sidebar-logo">
-        <div className="logo-badge">B</div>
+        <div className="logo-badge">P</div>
         <div>
-          <div className="logo-text">Ateliê Bruma</div>
+          <div className="logo-text">Piu Mobile</div>
           <div className="logo-sub">Design & Engenharia</div>
         </div>
       </div>
