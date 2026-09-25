@@ -1,0 +1,53 @@
+---
+description: Convenções de UI do Ateliê Bruma — React, tokens, classes e cópia em português
+alwaysApply: true
+---
+
+# Frontend Ateliê Bruma
+
+React 19, função, `.jsx`. Ícones só de `lucide-react`. Sem nova dependência, router ou store sem pedido.
+
+`App.jsx` é dono de demandas, catálogo, aba, modo, demanda ativa, modal e toast. View recebe dados e callback. Estado local fica em filtro, formulário, cronômetro e aba de cadastro.
+
+## Visual
+
+Use os tokens de `src/index.css`. Não invente paleta nem fonte.
+
+- Fundo `--bg-main` / `--bg-surface`. Texto `--text-primary`, `--text-secondary`, `--text-muted`.
+- Acentos `--accent-cyan`, `--accent-blue`, `--accent-amber`, `--accent-emerald`, `--accent-purple`, `--accent-rose`.
+- Fonte UI `var(--font-sans)`. Código, data e cronômetro `var(--font-mono)`.
+- Raio `--radius-sm` a `--radius-lg`.
+
+Reaproveite classes de `src/App.css` antes de criar outra: `page-container`, `page-header`, `page-title`, `page-subtitle`, `btn-primary`, `btn-secondary`, `card`, `data-table`, `form-input`, `form-select`, `form-label`, `status-pill`, `priority-pill`, `activity-dot`.
+
+Botão que não envia formulário leva `type="button"`. Label aponta para o `id` do campo. Erro de formulário usa `role="alert"`.
+
+Cópia de interface em português. Código de demanda, status e nomes de catálogo permanecem como já estão no domínio.
+
+```jsx
+// Ruim
+<button onClick={salvar}>Salvar</button>
+<div style={{ background: '#111827', fontFamily: 'Inter' }}>Lista</div>
+
+// Bom
+<button type="button" className="btn-primary" onClick={salvar}>Salvar</button>
+<section className="card">Lista</section>
+```
+
+Não troque comportamento, filtro ou dado ao mexer em layout. Não trate Gantt, esteira ou KPI fixo como bug sem pedido para ligá-los ao estado.
+
+## Cadastros
+
+Incluir um item usa `cad-composer`, separado da lista. O botão nomeia o que entra: "Adicionar subprocesso", "Adicionar colaborador", "Adicionar tipo". Não use só "Adicionar".
+
+Novo tipo deixa à vista nome, ordem, minutos, cor, colaborador padrão e "Usa subprocessos". Anteriores e próximas ficam fechadas no botão "Ligações", com resumo Antes/Depois. A pessoa abre para ver as listas. Editar um tipo abre as ligações. Não desenhe as duas grades abertas ao mesmo tempo.
+
+Erro de cadastro passa por `ErroForm`: `role="alert"`, foco no aviso, `aria-describedby` no campo. Exclusão pergunta "Excluir?" na própria linha antes de confirmar.
+
+## Relatórios
+
+A tela é a prévia da planilha, uma lista de destinos e a lista de backups. A prévia é tabela. Os destinos e os backups não viram cartões iguais. Importar agora fica desabilitado até a prévia ter linhas. Erro da planilha e do backup usam `role="alert"` e recebem foco. Restaurar e excluir backup perguntam na própria linha antes de confirmar.
+
+## Nova demanda
+
+O modal cria uma demanda por modulação e uma filha por etapa marcada. Subprocessos só aparecem se o tipo usa. A próxima etapa fica fechada até a anterior ser marcada. Erro do formulário usa `role="alert"` e recebe foco.

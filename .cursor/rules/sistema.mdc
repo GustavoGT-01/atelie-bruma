@@ -1,0 +1,40 @@
+---
+description: Domínio do Ateliê Bruma — demandas, catálogo, modos e o que o protótipo ainda não faz
+alwaysApply: true
+---
+
+# Ateliê Bruma
+
+Leia `CONTEXTO.md` antes de mudar comportamento, dados ou cópia de tela. Este arquivo é a fonte do domínio.
+
+Ateliê Bruma gere demandas de design e engenharia. Frontend só. Estado em memória em `src/App.jsx`. Sem API, banco, router ou login real.
+
+## Preserve
+
+- Demanda: `id`, `atividade`, `produto`, `modulacao`, `especificacao`, `executor`, `prioridade`, `solicitacao`, `status`, `tempoEstimado`, `tempoEmAtividadeSegundos`, `motivoPausa`, `historicoParadas`. Opcionais: `observacoes`, `aguardaId`, `subprocessos`.
+- Status: Aguardando aprovação, Aguardando, Liberada, Em andamento, Pausado, Concluída, Rejeitada.
+- Nova demanda nasce com status inicial (padrão `Liberada`), tempo 0, id `DEM-` + 4 dígitos. Especificação obrigatória. Uma demanda por modulação. Filha nasce `Aguardando` com `aguardaId` da anterior. Concluir a anterior libera essa filha para `Liberada`.
+- Executor: iniciar/retomar grava `Em andamento`; pausar grava `Pausado`, motivo e histórico; finalizar grava `Concluída`. Motivo padrão: `Setup / preparação`.
+- Nomes de catálogo em maiúsculas `pt-BR`. Login em minúsculas. Sem duplicata de nome ou login.
+- Renomear atividade, produto, modulação ou executor atualiza as demandas pelo `rename` de `handleCatalogChange`. Renomear colaborador também atualiza `colaboradorPadrao`.
+- Não exclua item de catálogo que `isCatalogNameUsed` ainda encontre. Peça renomear.
+- Cadastros e Exportação de Relatórios só com `appMode === 'ADM'`. Modo `EXECUTOR` esconde os dois e abre a aba `executor`.
+- Cores de atividade vêm de `catalog.atividades[].cor`.
+- Backup em Exportação de Relatórios grava lote e catálogo no `localStorage`. O lote em uso continua só na memória até restaurar.
+
+## Não assuma como vivo
+
+Gantt do cronograma e a esteira do fluxo estão fixos no componente. A tela `relatorios` importa a aba Desenvolvimento e baixa o lote, só no modo ADM. O sino abre o Insight. Papéis e telas do colaborador não filtram a sidebar.
+
+Não ligue Gantt nem esteira aos dados, nem crie backend, sem pedido explícito.
+
+```jsx
+// Ruim: apagar produto que ainda está numa demanda
+catalog.produtos.filter((item) => item.id !== id)
+
+// Bom: bloquear e orientar
+if (isUsed('produto', item.nome)) {
+  setErro(`${item.nome} está em demandas. Renomeie em vez de excluir.`);
+  return;
+}
+```
