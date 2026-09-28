@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Play, 
   Pause, 
@@ -11,12 +11,44 @@ import {
   RotateCcw
 } from 'lucide-react';
 import { MOTIVOS_PARADA } from '../data/mockData';
+import { lerPainel } from '../api/demandas';
+import { salvarPreferencias } from '../api/catalogo';
+import { statusParaUi } from '../api/adapters';
+
+function gruposPorProduto(demandas) {
+  const mapa = new Map();
+  for (const demanda of demandas) {
+    const nome = (demanda.produto || '').trim();
+    const chave = nome ? nome.toUpperCase() : '-';
+    const label = nome || '-';
+    if (!mapa.has(chave)) mapa.set(chave, { label, demandas: [] });
+    mapa.get(chave).demandas.push(demanda);
+  }
+  return [...mapa.values()]
+    .sort((a, b) => {
+      if (a.label === '-') return 1;
+      if (b.label === '-') return -1;
+      return a.label.localeCompare(b.label, 'pt-BR', { sensitivity: 'base' });
+    })
+    .map((grupo) => ({
+      ...grupo,
+      demandas: [...grupo.demandas].sort((a, b) =>
+        String(a.id).localeCompare(String(b.id), 'pt-BR', { numeric: true })
+      ),
+    }));
+}
+
+function rotuloOpcao(demanda) {
+  const partes = [demanda.atividade, demanda.modulacao, demanda.executor].filter(Boolean);
+  return `${demanda.id} — ${partes.join(' · ')} (${(demanda.status || '').toUpperCase()})`;
+}
 
 export default function PainelExecutorView({ 
   demands, 
   activeDemand, 
   setActiveDemand, 
-  onUpdateDemandStatus 
+  onUpdateDemandStatus,
+  onResetTempo
 }) {
   const currentDemand = activeDemand || demands[0];
 
@@ -26,8 +58,35 @@ export default function PainelExecutorView({
   const [pauseHistory, setPauseHistory] = useState(currentDemand?.historicoParadas || [
     { motivo: "Setup / preparação", horario: "08:15" }
   ]);
+  const [fila, setFila] = useState(null);
+  const [fixando, setFixando] = useState(false);
 
-  // Sync state when demand changes
+  useEffect(() => {
+    let ativo = true;
+    lerPainel()
+      .then((dados) => {
+        if (ativo) setFila(dados);
+      })
+      .catch(() => {
+        if (ativo) setFila(null);
+      });
+    return () => {
+      ativo = false;
+    };
+  }, [demands]);
+
+  useEffect(() => {
+    if (!fila?.gruposPorProduto?.length) return;
+    if (activeDemand && demands.some((item) => item.id === activeDemand.id)) return;
+    const proxima = fila.gruposPorProduto
+      .flatMap((grupo) => grupo.demandas)
+      .find((item) => item.id === fila.proximaId);
+    const alvo = demands.find((item) => item.id === proxima?.codigo);
+    if (alvo) setActiveDemand(alvo);
+  }, [fila, demands, activeDemand, setActiveDemand]);
+
+  // Sync state when demand changes. O tempo e o histórico vêm dos apontamentos
+  // gravados no servidor, então também ressincroniza a cada resposta dele.
   useEffect(() => {
     if (currentDemand) {
       setIsRunning(currentDemand.status === 'Em andamento');
@@ -35,7 +94,11 @@ export default function PainelExecutorView({
       setSelectedMotivo(currentDemand.motivoPausa || '');
       setPauseHistory(currentDemand.historicoParadas || []);
     }
-  }, [currentDemand?.id]);
+  }, [
+    currentDemand?.id,
+    currentDemand?.status,
+    currentDemand?.tempoEmAtividadeSegundos,
+  ]);
 
   // Timer Tick
   useEffect(() => {
@@ -57,11 +120,45 @@ export default function PainelExecutorView({
   };
 
   // Estimate progress %
+  const grupos = useMemo(() => {
+    if (fila?.gruposPorProduto?.length) {
+      return fila.gruposPorProduto.map((grupo) => ({
+        label: grupo.produtoNome,
+        demandas: grupo.demandas.map((item) => {
+          const local = demands.find((demanda) => demanda.id === item.codigo);
+          return local || {
+            id: item.codigo,
+            atividade: item.atividade,
+            modulacao: item.modulacao,
+            executor: item.executor,
+            status: statusParaUi(item.status),
+          };
+        }),
+      }));
+    }
+    return gruposPorProduto(
+      demands.filter((item) => item.status === 'Liberada' || item.status === 'Em andamento' || item.status === 'Pausado')
+    );
+  }, [fila, demands]);
+
+  const alternarFixar = async () => {
+    if (!fila?.produtoFocoId || fixando) return;
+    const soltar = fila.produtoFixadoId === fila.produtoFocoId;
+    setFixando(true);
+    try {
+      await salvarPreferencias({ produtoFocoFixadoId: soltar ? null : fila.produtoFocoId });
+      setFila(await lerPainel());
+    } finally {
+      setFixando(false);
+    }
+  };
+
   const estimatedMins = parseInt(currentDemand?.tempoEstimado) || 35;
   const estimatedSecs = estimatedMins * 60;
   const progressPercent = Math.min(100, Math.round((seconds / estimatedSecs) * 100));
 
   const handleStart = () => {
+    if (!currentDemand) return;
     setIsRunning(true);
     setSelectedMotivo('');
     if (onUpdateDemandStatus) {
@@ -70,6 +167,7 @@ export default function PainelExecutorView({
   };
 
   const handlePause = (motivo) => {
+    if (!currentDemand) return;
     const motivoToUse = motivo || selectedMotivo || 'Setup / preparação';
     setIsRunning(false);
     setSelectedMotivo(motivoToUse);
@@ -85,6 +183,7 @@ export default function PainelExecutorView({
   };
 
   const handleFinish = () => {
+    if (!currentDemand) return;
     setIsRunning(false);
     if (onUpdateDemandStatus) {
       onUpdateDemandStatus(currentDemand.id, 'Concluída', null, seconds);
@@ -104,30 +203,79 @@ export default function PainelExecutorView({
       {/* Demand Selector Bar */}
       <div className="demand-selector-card">
         <div className="demand-select-wrapper">
-          <span style={{ fontSize: '0.82rem', fontWeight: '600', color: 'var(--text-muted)' }}>
+          <label
+            htmlFor="painel-demanda-select"
+            style={{ fontSize: '0.82rem', fontWeight: '600', color: 'var(--text-muted)' }}
+          >
             SELECIONAR DEMANDA:
-          </span>
-          <select 
+          </label>
+          <select
+            id="painel-demanda-select"
             className="demand-select-dropdown"
             value={currentDemand?.id || ''}
             onChange={(e) => {
-              const found = demands.find(d => d.id === e.target.value);
+              const found = demands.find((d) => d.id === e.target.value);
               if (found) setActiveDemand(found);
             }}
           >
-            {demands.map(d => (
-              <option key={d.id} value={d.id}>
-                {d.id} — {d.atividade} · {d.produto} · {d.executor} ({d.status.toUpperCase()})
-              </option>
+            {grupos.map((grupo) => (
+              <optgroup key={grupo.label} label={grupo.label}>
+                {grupo.demandas.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {rotuloOpcao(d)}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </div>
 
-        <div className="product-focus-badge">
-          <Tag size={14} style={{ color: 'var(--accent-cyan)' }} />
-          <span>PRODUTO: <strong>{currentDemand?.produto || 'N/A'}</strong></span>
+        <div className="painel-foco">
+          <Tag size={14} style={{ color: 'var(--accent-cyan)' }} aria-hidden="true" />
+          <div>
+            <span className="meta-label">Produto em foco</span>
+            <strong>
+              {fila?.produtoFocoNome || currentDemand?.produto || '—'}
+              {fila?.produtoFixadoId && fila.produtoFixadoId === fila.produtoFocoId ? ' (fixado)' : ''}
+            </strong>
+          </div>
+          <button
+            type="button"
+            className="btn-secondary"
+            disabled={fixando || !fila?.produtoFocoId}
+            onClick={alternarFixar}
+          >
+            {fila?.produtoFixadoId && fila.produtoFixadoId === fila.produtoFocoId ? 'Desafixar' : 'Fixar produto'}
+          </button>
         </div>
       </div>
+
+      {fila?.cadeia?.length ? (
+        <div className="card painel-cadeia">
+          {fila.cadeia.map((grupo) => (
+            <section key={grupo.titulo}>
+              <h2>{grupo.titulo}</h2>
+              <ul>
+                {grupo.itens.map((item) => (
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      className={currentDemand?.id === item.codigo ? 'is-on' : undefined}
+                      onClick={() => {
+                        const found = demands.find((demanda) => demanda.id === item.codigo);
+                        if (found) setActiveDemand(found);
+                      }}
+                    >
+                      {item.codigo} — {item.atividade}
+                      {item.executor ? ` · ${item.executor}` : ''} ({statusParaUi(item.status)})
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
+      ) : null}
 
       {/* Main Grid: Left Execution / Right Stop Reasons */}
       <div className="executor-grid">
@@ -245,14 +393,8 @@ export default function PainelExecutorView({
                 className="btn-secondary"
                 onClick={() => {
                   setSeconds(0);
-                  if (onUpdateDemandStatus && currentDemand) {
-                    onUpdateDemandStatus(
-                      currentDemand.id,
-                      currentDemand.status,
-                      currentDemand.motivoPausa,
-                      0,
-                      currentDemand.historicoParadas,
-                    );
+                  if (onResetTempo && currentDemand) {
+                    onResetTempo(currentDemand.id);
                   }
                 }}
                 title="Zerar cronômetro"

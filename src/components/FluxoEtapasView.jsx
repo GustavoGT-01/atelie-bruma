@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { 
   GitBranch, 
   CheckCircle2, 
@@ -14,57 +14,39 @@ export default function FluxoEtapasView({
   demands, 
   onSelectDemand,
   produtos = PRODUTOS_LIST,
+  atividades = [],
+  diagramDefault = [],
+  atividadesConfig = ATIVIDADES_CONFIG,
 }) {
-  const [selectedProduct, setSelectedProduct] = useState('AMY');
+  const [selectedProduct, setSelectedProduct] = useState(produtos[0] || '');
   const produtoAtivo = produtos.includes(selectedProduct) ? selectedProduct : (produtos[0] || '');
 
-  const pipelineSteps = [
-    {
-      step: 1,
-      title: "CADASTRO",
-      demand: "DEM-00018",
-      description: "Cadastrar medidas e variantes",
-      executor: "RAYANE",
-      status: "Concluída",
-      color: "#14B8A6"
-    },
-    {
-      step: 2,
-      title: "3D ESTRUTURAL",
-      demand: "DEM-00162",
-      description: "Estrutura interna em madeira e requadro",
-      executor: "GUSTAVO",
-      status: "Pausado",
-      color: "#06B6D4"
-    },
-    {
-      step: 3,
-      title: "RECORTES",
-      demand: "DEM-00132",
-      description: "Plano de corte de chapas e espumas",
-      executor: "GUSTAVO",
-      status: "Liberada",
-      color: "#F59E0B"
-    },
-    {
-      step: 4,
-      title: "LISTAGEM",
-      demand: "DEM-00133",
-      description: "Listagem de peças e ferragens para custos",
-      executor: "GUSTAVO",
-      status: "Liberada",
-      color: "#10B981"
-    },
-    {
-      step: 5,
-      title: "MODELAGEM & ESTOFAMENTO",
-      demand: "DEM-00140",
-      description: "Padrão de costura e prototipagem do assento",
-      executor: "MATHEUS",
-      status: "Aguardando",
-      color: "#8B5CF6"
+  const pipelineSteps = useMemo(() => {
+    const ordem = new Map();
+    for (const tipo of atividades) {
+      const diagrama = diagramDefault.find((item) => item.id === tipo.id);
+      ordem.set(tipo.nome, diagrama?.ordem ?? tipo.ordem ?? 999);
     }
-  ];
+    return demands
+      .filter((demanda) => demanda.produto === produtoAtivo)
+      .slice()
+      .sort((a, b) => {
+        const diff = (ordem.get(a.atividade) ?? 999) - (ordem.get(b.atividade) ?? 999);
+        if (diff !== 0) return diff;
+        return String(a.id).localeCompare(String(b.id), 'pt-BR', { numeric: true });
+      })
+      .map((demanda, index) => ({
+        step: index + 1,
+        title: demanda.atividade,
+        demand: demanda.id,
+        description: demanda.especificacao || demanda.modulacao || '',
+        executor: demanda.executor,
+        status: demanda.status,
+        color: atividadesConfig[demanda.atividade]?.color || '#94a3b8',
+      }));
+  }, [demands, produtoAtivo, atividades, diagramDefault, atividadesConfig]);
+
+  const concluidas = pipelineSteps.filter((step) => step.status === 'Concluída').length;
 
   return (
     <div className="page-container">
@@ -106,22 +88,25 @@ export default function FluxoEtapasView({
           <div>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Esteira do Produto</span>
             <h2 style={{ fontSize: '1.4rem', fontWeight: '800', color: '#ffffff' }}>
-              {produtoAtivo} <span style={{ fontSize: '0.9rem', color: 'var(--accent-cyan)', fontWeight: '500' }}>• Modulação Geral</span>
+              {produtoAtivo || '—'}
             </h2>
           </div>
 
           <div style={{ display: 'flex', gap: '8px', fontSize: '0.82rem' }}>
             <span style={{ background: 'rgba(255,255,255,0.06)', padding: '6px 12px', borderRadius: '6px' }}>
-              Total Etapas: <strong>5</strong>
+              Total Etapas: <strong>{pipelineSteps.length}</strong>
             </span>
             <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '6px 12px', borderRadius: '6px' }}>
-              Concluídas: <strong>1</strong>
+              Concluídas: <strong>{concluidas}</strong>
             </span>
           </div>
         </div>
 
         {/* Steps Flow Chain */}
         <div className="pipeline-flow">
+          {pipelineSteps.length === 0 ? (
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>Nenhuma demanda deste produto.</p>
+          ) : null}
           {pipelineSteps.map((step, idx) => {
             const isLast = idx === pipelineSteps.length - 1;
             const abrirEtapa = () => {

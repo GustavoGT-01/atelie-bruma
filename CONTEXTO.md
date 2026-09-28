@@ -2,7 +2,7 @@
 
 Piu Mobile é o painel de design e engenharia da produção. Organiza demandas por produto, modulação e atividade, aponta tempo no chão e mantém os catálogos que alimentam o fluxo.
 
-Este repositório é só o frontend. Não há API, banco, autenticação real nem router. O lote em uso e o catálogo em uso vivem na memória de `src/App.jsx` e voltam ao exemplo ao recarregar a página. A exceção é o backup: a lista de backups fica no `localStorage` deste navegador, na chave `piu-mobile-backups`.
+O lote, o catálogo e a sessão vivem na API Express em `server/`. O frontend Vite fala com ela por `/api`. O banco é SQLite (`server/prisma/dev.db`), fora do git. Login real grava o cookie `gd_session`.
 
 Interface em português (`pt-BR`). Título da janela: "Piu Mobile — Gestão de Demandas & Engenharia".
 
@@ -12,7 +12,8 @@ Interface em português (`pt-BR`). Título da janela: "Piu Mobile — Gestão de
 - Vite 8, plugin `@vitejs/plugin-react`
 - Ícones só de `lucide-react`
 - Lint `oxlint` (`npm run lint`)
-- Sem TypeScript, sem React Router, sem biblioteca de estado, sem leitor de planilha de terceiros
+- Sem TypeScript, sem React Router, sem biblioteca de estado
+- API: Express, Prisma e SQLite. Planilha no servidor com exceljs
 - Estilos globais em `src/index.css` (tokens) e `src/App.css` (layout e componentes)
 - Fontes: Plus Jakarta Sans (texto) e JetBrains Mono (códigos, datas, horários e tempo)
 
@@ -26,7 +27,7 @@ Scripts: `npm run dev`, `npm run build`, `npm run preview`, `npm run lint`.
 | `src/App.jsx` | Dono do estado e das transições. |
 | `src/components/Sidebar.jsx` | Navegação e modo ADM/Executor. |
 | `src/components/DashboardView.jsx` | Visão Geral. |
-| `src/components/DemandasView.jsx` | Tabela de demandas. |
+| `src/components/DemandasAdmView.jsx` | Tabela de demandas (ADM e Executor). |
 | `src/components/PainelExecutorView.jsx` | Cronômetro e status. |
 | `src/components/CronogramaView.jsx` | Lista e Gantt fixo. |
 | `src/components/FluxoEtapasView.jsx` | Esteira fixa por produto. |
@@ -57,12 +58,14 @@ Ordem da sidebar:
 | `fluxo` | Fluxo de Etapas | ADM e Executor |
 | `cadastros` | Cadastros | só ADM |
 
-Dois modos, sem login:
+Login obrigatório. O nome do rodapé é o usuário da sessão.
 
-- `ADM`: todas as abas. Papel exibido: Administrador.
-- `EXECUTOR`: Cadastros e Exportação de Relatórios somem e a aba ativa passa a ser o Painel Executor. Papel exibido: Executor Responsável.
+Dois modos de tela:
 
-O usuário fixo do rodapé é GUSTAVO (`usuarioAtual` em `App`). O atalho `Ctrl+K` (ou `Cmd+K`) abre Demandas e foca `.search-input`. O botão de busca rápida faz o mesmo. O sino abre o Insight.
+- `ADM`: todas as abas. Só papel ADMIN troca o modo. A lista de demandas é o lote inteiro.
+- `EXECUTOR`: Cadastros e Exportação de Relatórios somem e a aba ativa passa a ser o Painel Executor. `GET /api/demandas` devolve só o que essa pessoa executa. Visão Geral, Cronograma, Fluxo, Demandas e Painel usam essa lista. TI e GERENCIA seguem a ligação do tipo, não o executor da planilha.
+
+O atalho `Ctrl+K` (ou `Cmd+K`) abre Demandas e foca `.search-input`. O botão de busca rápida faz o mesmo. O sino abre o Insight.
 
 Clicar uma demanda (tabela, cronograma, fluxo, alerta ou aviso do Insight) chama `handleSelectDemand`: define a demanda ativa, vai para o Painel Executor e mostra toast. Cartão do cronograma, barra do Gantt, etapa do fluxo e alerta também abrem com Enter ou Espaço.
 
@@ -162,7 +165,7 @@ Fluxo inicial das atividades (ordem e próximas):
 
 ### Visão Geral (`DashboardView`)
 
-Os números saem de `demands`.
+Os números saem de `GET /api/dashboard`. No modo executor a rota usa o mesmo corte da lista. Se a API falhar, a tela conta o lote já carregado.
 
 - Demandas em Andamento: quantidade `Em andamento`. O subtítulo conta as `Liberada`.
 - Eficiência Geral: concluídas dividido pelo total, arredondada. Sem demandas, 0.
@@ -171,21 +174,23 @@ Os números saem de `demands`.
 
 Barras contam demandas por atividade, usam a cor do catálogo e ordenam da maior contagem para a menor. Ranking é concluídas dividido pelo total de cada executor. Alertas listam até quatro demandas pausadas ou em andamento e abrem o executor. O botão Nova Demanda abre o modal.
 
-### Demandas (`DemandasView`)
+### Demandas (`DemandasAdmView`)
 
-Tabela ordenável por código, atividade, produto e executor. O cabeçalho ordenável responde a Enter e Espaço e expõe `aria-sort`. Busca em código, produto, atividade, especificação e executor. Filtros de status, atividade, executor e prioridade (Alta, Média, Baixa) se combinam. Atalhos: Todas, Liberadas, Prioridade Alta, Minhas Demandas. "Minhas" compara o executor com `usuarioAtual`. A contagem "Mostrando N de T" é ao vivo (`aria-live`) e pulsa quando N muda. Linha ou botão Executar abre o Painel Executor. Estado vazio: "Nenhuma demanda encontrada para os filtros selecionados."
+Mesmo layout nos dois modos: busca, atividade, executor, Limpar, Buscar e pills de status. O cabeçalho ordena e a borda da coluna redimensiona. Estado vazio: "Nenhuma demanda encontrada para esta busca."
+
+No ADM a linha tem Executar e Excluir, e o botão "Tornar editável (planilha)" grava em lote. No Executor a lista já veio filtrada; não há planilha nem exclusão. Clicar a linha abre o Painel.
 
 ### Painel do Executor (`PainelExecutorView`)
 
-Seletor da demanda ativa, metadados, especificação, cronômetro `HH:MM:SS` e barra de progresso contra `tempoEstimado`. Ações: iniciar, retomar, pausar, finalizar e zerar. Se não houver demanda ativa, usa a primeira do lote. Painel de motivo e histórico de paradas.
+`GET /api/painel` monta a fila com `ordenarFilaPainel`: só Liberada, Em andamento e Pausado, agrupadas por produto, produto em foco primeiro. O select usa esses grupos. Fixar produto grava `produtoFocoFixadoId`. Abaixo, a cadeia do produto em foco separada por modulação. Cronômetro `HH:MM:SS`, pausa, finalizar e zerar continuam na demanda ativa.
 
 ### Cronograma (`CronogramaView`)
 
-Lista as sete primeiras demandas e um Gantt 08:00–17:00. Os interruptores Dia, Semana e Mês e a data "24 de Setembro, 2026" não mudam os dados. As barras `scheduleRows` estão fixas no componente; não saem de `demands`. Cartão e barra abrem a demanda correspondente, se ela existir.
+Dia, Semana e Mês filtram pela data de solicitação. As barras do Gantt 08:00–17:00 usam o tempo estimado dessas demandas. Sem demanda na data, a grade mostra as liberadas, em andamento e pausadas do lote visível. Cartão e barra abrem a demanda.
 
 ### Fluxo de Etapas (`FluxoEtapasView`)
 
-Filtro visual por produto, com `aria-pressed` no produto ativo. A esteira de cinco passos (CADASTRO, 3D ESTRUTURAL, RECORTES, LISTAGEM, MODELAGEM & ESTOFAMENTO) está fixa. Trocar o produto não troca as demandas da esteira. Clicar um passo abre a demanda daquele código, se ela existir. O subtítulo descreve a liberação da próxima etapa; quem executa essa regra é a conclusão da demanda ligada por `aguardaId`, não a esteira.
+Filtro por produto, com `aria-pressed`. A esteira lista as demandas daquele produto, na ordem de `diagramDefault`. Trocar o produto troca as etapas. Clicar um passo abre a demanda. Quem libera a próxima etapa continua sendo a conclusão no servidor, não o desenho da esteira.
 
 ### Cadastros (`CadastrosView`)
 
@@ -255,13 +260,9 @@ Ordem, da mais urgente para a mais branda. Dentro do mesmo nível, ordena pelo i
 3. Tempo apontado maior que `tempoEstimado`, fora de `Concluída`, e o estimado maior que zero. Id `atraso:{id}`.
 4. Três ou mais demandas `Pausado` na mesma atividade. O clique abre a primeira pausada dessa atividade. Id `gargalo:{atividade}`.
 
-## O que o protótipo ainda não faz
+## O que ainda fica de fora
 
-- Persistir o lote em uso. Ele volta às 17 demandas de exemplo ao recarregar. Os backups salvos ficam no navegador.
-- Falar com backend.
-- Autenticar. O interruptor ADM/Executor ignora papéis e telas do catálogo.
-- Aplicar `telas` e `atividades` do colaborador na navegação real. A sidebar usa só `appMode`.
-- Recalcular o Gantt e a esteira de produto a partir das demandas. A Visão Geral já usa o lote vivo. Concluir uma demanda só libera a filha ligada por `aguardaId`.
-- Criar produto ou modulação novos só porque o nome foi digitado na nova demanda. O nome fica na demanda.
+- A lista `telas` do colaborador não filtra a sidebar. O corte é o modo ADM ou Executor.
+- O Insight continua local, em cima do lote já carregado.
 
-Ao evoluir o produto, preserve os nomes, os status, os motivos de pausa, a propagação de renomeação e o bloqueio de exclusão de item ainda usado. Gantt e esteira de produto continuam fixos no componente até haver pedido explícito para ligá-los ao lote.
+Ao evoluir o produto, preserve os nomes, os status, os motivos de pausa, a propagação de renomeação e o bloqueio de exclusão de item ainda usado.

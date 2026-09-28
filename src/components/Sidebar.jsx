@@ -9,7 +9,8 @@ import {
   SlidersHorizontal,
   UserCheck,
   ShieldAlert,
-  FolderKanban
+  FolderKanban,
+  LogOut
 } from 'lucide-react';
 
 export default function Sidebar({ 
@@ -19,9 +20,12 @@ export default function Sidebar({
   setAppMode, 
   activeDemandsCount,
   usuarioNome = 'GUSTAVO',
+  papelLabel,
   onNavigate,
+  onSair,
 }) {
-  const navItems = [
+  const engenharia = [
+ 
     { id: 'dashboard', label: 'Visão Geral', icon: LayoutDashboard },
     { id: 'demandas', label: 'Demandas', icon: ListTodo, badge: activeDemandsCount },
     { id: 'executor', label: 'Painel Executor', icon: Timer },
@@ -30,6 +34,7 @@ export default function Sidebar({
     { id: 'fluxo', label: 'Fluxo de Etapas', icon: GitFork },
     { id: 'cadastros', label: 'Cadastros', icon: FolderKanban, adminOnly: true },
   ];
+  const navItems = engenharia;
 
   return (
     <aside className="sidebar">
@@ -105,9 +110,20 @@ export default function Sidebar({
           <div className="user-avatar">{usuarioNome.slice(0, 1)}</div>
           <div className="user-info">
             <span className="user-name">{usuarioNome}</span>
-            <span className="user-role">{appMode === 'ADM' ? 'Administrador' : 'Executor Responsável'}</span>
+            <span className="user-role">{papelLabel || (appMode === 'ADM' ? 'Administrador' : 'Executor Responsável')}</span>
           </div>
         </div>
+        {onSair && (
+          <button
+            className="btn-secondary sidebar-sair"
+            type="button"
+            title="Sair"
+            aria-label="Sair"
+            onClick={onSair}
+          >
+            <LogOut size={16} aria-hidden="true" />
+          </button>
+        )}
       </div>
     </aside>
   );

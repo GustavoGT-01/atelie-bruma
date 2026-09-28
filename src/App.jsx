@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Sidebar from './components/Sidebar';
-import DemandasView from './components/DemandasView';
+import DemandasAdmView from './components/DemandasAdmView';
 import PainelExecutorView from './components/PainelExecutorView';
 import DashboardView from './components/DashboardView';
 import CronogramaView from './components/CronogramaView';
@@ -8,20 +8,46 @@ import FluxoEtapasView from './components/FluxoEtapasView';
 import CadastrosView from './components/CadastrosView';
 import RelatoriosView from './components/RelatoriosView';
 import NewDemandModal from './components/NewDemandModal';
-import { INITIAL_DEMANDS } from './data/mockData';
+import LoginView from './components/LoginView';
 import { INITIAL_CATALOG } from './data/cadastrosData';
 import { gerarInsights } from './insights';
-import { gravarBackups, lerBackups, montarBackup } from './backups';
+import { excluirBackup, lerBackups, restaurarBackup, salvarBackup } from './backups';
+import { entrar, lerSessao, sair } from './api/auth';
+import { carregarCatalogo, salvarModoUi, sincronizarCatalogo } from './api/catalogo';
+import {
+  criarDemandas,
+  finalizarDemanda,
+  iniciarDemanda,
+  listarDemandas,
+  pausarDemanda,
+  zerarTempoDemanda,
+} from './api/demandas';
 import { Bell, Search, Command, Check, Menu, X } from 'lucide-react';
 import './App.css';
 
+const TIPOS_POR_LIGACAO = ['TI', 'GERENCIA'];
+
+function demandaDoUsuario(demanda, usuarioNome, catalog) {
+  const tipoNome = (demanda.atividade || '').toUpperCase().trim();
+  if (TIPOS_POR_LIGACAO.includes(tipoNome)) {
+    const pessoa = catalog.colaboradores.find((item) => item.nome === usuarioNome);
+    const tipo = catalog.atividades.find((item) => item.nome === demanda.atividade);
+    if (!pessoa || !tipo) return false;
+    return (pessoa.atividades || []).includes(tipo.id);
+  }
+  return demanda.executor === usuarioNome;
+}
+
 export default function App() {
-  const [demands, setDemands] = useState(INITIAL_DEMANDS);
+  const [sessao, setSessao] = useState(null);
+  const [carregandoSessao, setCarregandoSessao] = useState(true);
+  const [carregandoDados, setCarregandoDados] = useState(true);
+  const [demands, setDemands] = useState([]);
   const [catalog, setCatalog] = useState(INITIAL_CATALOG);
-  const [backups, setBackups] = useState(lerBackups);
+  const [backups, setBackups] = useState([]);
   const [currentTab, setCurrentTab] = useState('demandas');
   const [appMode, setAppMode] = useState('ADM');
-  const [activeDemand, setActiveDemand] = useState(INITIAL_DEMANDS[0]);
+  const [activeDemand, setActiveDemand] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [insightAberto, setInsightAberto] = useState(false);
   const [menuAberto, setMenuAberto] = useState(false);
@@ -29,12 +55,92 @@ export default function App() {
   const [toastLeaving, setToastLeaving] = useState(false);
   const [toastKey, setToastKey] = useState(0);
   const insightsVistos = useRef(new Set());
-  const usuarioAtual = 'GUSTAVO';
+  const usuarioAtual = sessao?.user?.nome || 'GUSTAVO';
 
   const triggerToast = (msg) => {
     setToastLeaving(false);
     setToastKey((key) => key + 1);
     setToastMessage(msg);
+  };
+
+  const aplicarSessao = (dados) => {
+    setSessao(dados);
+    if (!dados) return;
+    const modo = dados.adminUi ? 'ADM' : 'EXECUTOR';
+    setAppMode(modo);
+    if (modo === 'EXECUTOR') setCurrentTab('executor');
+  };
+
+  useEffect(() => {
+    let ativo = true;
+    lerSessao()
+      .then((dados) => {
+        if (!ativo) return;
+        aplicarSessao(dados);
+      })
+      .catch(() => {
+        if (ativo) setSessao(null);
+      })
+      .finally(() => {
+        if (ativo) setCarregandoSessao(false);
+      });
+    return () => {
+      ativo = false;
+    };
+  }, []);
+
+  const aplicarDemandas = (lista) => {
+    setDemands(lista);
+    setActiveDemand((prev) => lista.find((item) => item.id === prev?.id) || lista[0] || null);
+    return lista;
+  };
+
+  const recarregarDemandas = () => listarDemandas().then(aplicarDemandas);
+
+  useEffect(() => {
+    if (!sessao) return undefined;
+    let ativo = true;
+    setCarregandoDados(true);
+    Promise.all([
+      carregarCatalogo(),
+      listarDemandas(),
+      sessao.adminUi ? lerBackups().catch(() => []) : Promise.resolve([]),
+    ])
+      .then(([catalogo, lista, listaBackups]) => {
+        if (!ativo) return;
+        setCatalog(catalogo);
+        aplicarDemandas(lista);
+        setBackups(listaBackups);
+      })
+      .catch((erro) => {
+        if (ativo) triggerToast(erro?.message || 'Não foi possível carregar os dados.');
+      })
+      .finally(() => {
+        if (ativo) setCarregandoDados(false);
+      });
+    return () => {
+      ativo = false;
+    };
+  }, [sessao]);
+
+  const trocarModo = (modo) => {
+    setAppMode(modo);
+    if (modo === 'EXECUTOR') setCurrentTab('executor');
+    const gravar = sessao?.isRealAdmin ? salvarModoUi(modo) : Promise.resolve();
+    gravar
+      .then(() => recarregarDemandas())
+      .catch((erro) => triggerToast(erro?.message || 'Não foi possível atualizar o modo.'));
+  };
+
+  const fazerLogin = async (login, senha) => {
+    await entrar(login, senha);
+    aplicarSessao(await lerSessao());
+  };
+
+  const fazerLogout = async () => {
+    await sair();
+    setSessao(null);
+    setCurrentTab('demandas');
   };
 
   useEffect(() => {
@@ -74,91 +180,107 @@ export default function App() {
   };
 
   // Handle status update from timer/executor
-  const handleUpdateDemandStatus = (id, newStatus, reason, elapsedSeconds, newHistory) => {
-    let statusMudou = false;
-    setDemands((prev) => {
-      const atual = prev.find((d) => d.id === id);
-      statusMudou = Boolean(atual && atual.status !== newStatus);
-      return prev.map((d) => {
-        if (d.id === id) {
-          const updated = {
-            ...d,
-            status: newStatus,
-            tempoEmAtividadeSegundos: elapsedSeconds !== undefined ? elapsedSeconds : d.tempoEmAtividadeSegundos,
-            motivoPausa: reason !== undefined ? reason : d.motivoPausa,
-            historicoParadas: newHistory || d.historicoParadas
-          };
-          if (activeDemand?.id === id) {
-            setActiveDemand(updated);
-          }
-          return updated;
-        }
-        if (newStatus === 'Concluída' && d.aguardaId === id && d.status === 'Aguardando') {
-          const liberada = { ...d, status: 'Liberada' };
-          if (activeDemand?.id === d.id) setActiveDemand(liberada);
-          return liberada;
-        }
-        return d;
+  const handleUpdateDemandStatus = (id, newStatus, reason) => {
+    const alvo = demands.find((item) => item.id === id);
+    if (!alvo) return;
+    const statusAnterior = alvo.status;
+    const statusAntes = new Map(demands.map((item) => [item.id, item.status]));
+
+    const acao = newStatus === 'Em andamento'
+      ? iniciarDemanda(alvo.serverId)
+      : newStatus === 'Pausado'
+        ? pausarDemanda(alvo.serverId, reason || 'Setup / preparação')
+        : newStatus === 'Concluída'
+          ? finalizarDemanda(alvo.serverId)
+          : null;
+    if (!acao) return;
+
+    acao
+      .then(recarregarDemandas)
+      .then((lista) => {
+        if (statusAnterior === newStatus) return;
+        const liberou = lista.filter((item) => (
+          statusAntes.get(item.id) === 'Aguardando' && item.status === 'Liberada'
+        )).length;
+        const aviso = liberou === 1
+          ? ' A próxima etapa foi liberada.'
+          : liberou > 1
+            ? ` ${liberou} próximas etapas foram liberadas.`
+            : '';
+        triggerToast(`Status da ${id} alterado para "${newStatus}".${aviso}`);
+      })
+      .catch((erro) => {
+        triggerToast(erro?.message || 'Não foi possível gravar a mudança.');
+        recarregarDemandas().catch(() => {});
       });
-    });
-    if (statusMudou) {
-      const liberou = newStatus === 'Concluída'
-        ? demands.filter((item) => item.aguardaId === id && item.status === 'Aguardando').length
-        : 0;
-      const aviso = liberou === 1
-        ? ' A próxima etapa foi liberada.'
-        : liberou > 1
-          ? ` ${liberou} próximas etapas foram liberadas.`
-          : '';
-      triggerToast(`Status da ${id} alterado para "${newStatus}".${aviso}`);
-    }
+  };
+
+  const handleResetTempo = (id) => {
+    const alvo = demands.find((item) => item.id === id);
+    if (!alvo) return;
+    zerarTempoDemanda(alvo.serverId)
+      .then(recarregarDemandas)
+      .then(() => triggerToast(`Tempo da ${id} zerado.`))
+      .catch((erro) => {
+        triggerToast(erro?.message || 'Não foi possível zerar o tempo.');
+        recarregarDemandas().catch(() => {});
+      });
   };
 
   const handleAddDemand = (novas) => {
     const lista = Array.isArray(novas) ? novas : [novas];
-    setDemands((prev) => [...lista, ...prev]);
-    triggerToast(lista.length === 1
-      ? `Demanda ${lista[0].id} criada com sucesso!`
-      : `${lista.length} demandas criadas.`);
+    criarDemandas(lista, catalog)
+      .then((criadas) => recarregarDemandas().then(() => criadas))
+      .then((criadas) => {
+        triggerToast(criadas.length === 1
+          ? `Demanda ${criadas[0].codigo} criada com sucesso!`
+          : `${criadas.length} demandas criadas.`);
+      })
+      .catch((erro) => {
+        triggerToast(erro?.message || 'Não foi possível criar a demanda.');
+        recarregarDemandas().catch(() => {});
+      });
   };
 
-  const handleImportDemands = (novas) => {
-    setDemands((prev) => [...novas, ...prev]);
-    triggerToast(`${novas.length} demandas importadas.`);
+  const recarregarBackups = () =>
+    lerBackups()
+      .then(setBackups)
+      .catch(() => setBackups([]));
+
+  const handleImportDemands = (resultado) => {
+    const quantidade = resultado?.imported ?? resultado?.length ?? 0;
+    recarregarDemandas()
+      .then(() => triggerToast(`${quantidade} demandas importadas.`))
+      .catch((erro) => triggerToast(erro?.message || 'Não foi possível recarregar as demandas.'));
   };
 
-  const handleSalvarBackup = () => {
-    const lista = [montarBackup(demands, catalog), ...backups];
-    try {
-      gravarBackups(lista);
-    } catch {
-      return 'Não coube outro backup neste navegador. Exclua um antigo e tente de novo.';
-    }
-    setBackups(lista);
-    triggerToast('Backup salvo.');
-    return '';
-  };
+  const handleSalvarBackup = () =>
+    salvarBackup()
+      .then(recarregarBackups)
+      .then(() => {
+        triggerToast('Backup salvo.');
+        return '';
+      })
+      .catch((erro) => erro?.message || 'Não foi possível salvar o backup.');
 
-  const handleRestaurarBackup = (backup) => {
-    const lote = structuredClone(backup.demands);
-    const catalogo = structuredClone(backup.catalog);
-    setDemands(lote);
-    setCatalog(catalogo);
-    setActiveDemand(lote.find((item) => item.id === activeDemand?.id) || lote[0] || null);
-    triggerToast('Backup restaurado.');
-  };
+  const handleRestaurarBackup = (backup) =>
+    restaurarBackup(backup.id)
+      .then(() => Promise.all([carregarCatalogo(), recarregarDemandas(), recarregarBackups()]))
+      .then(([catalogo]) => {
+        setCatalog(catalogo);
+        triggerToast('Backup restaurado.');
+        return '';
+      })
+      .catch((erro) => erro?.message || 'Não foi possível restaurar o backup.');
 
-  const handleExcluirBackup = (id) => {
-    const lista = backups.filter((item) => item.id !== id);
-    try {
-      gravarBackups(lista);
-    } catch {
-      return 'Não foi possível excluir o backup neste navegador.';
-    }
-    setBackups(lista);
-    triggerToast('Backup excluído.');
-    return '';
-  };
+  const handleExcluirBackup = (id) =>
+    excluirBackup(id)
+      .then(recarregarBackups)
+      .then(() => {
+        triggerToast('Backup excluído.');
+        return '';
+      })
+      .catch((erro) => erro?.message || 'Não foi possível excluir o backup.');
 
   const atividadesConfig = useMemo(() => {
     const mapa = {};
@@ -168,15 +290,25 @@ export default function App() {
     return mapa;
   }, [catalog.atividades]);
 
-  const executorNames = useMemo(
-    () => catalog.colaboradores.map((pessoa) => pessoa.nome),
-    [catalog.colaboradores],
-  );
   const produtoNames = useMemo(
     () => catalog.produtos.map((item) => item.nome),
     [catalog.produtos],
   );
-  const insights = useMemo(() => gerarInsights(demands), [demands]);
+  const demandsDoExecutor = useMemo(() => {
+    if (appMode !== 'EXECUTOR') return demands;
+    return demands.filter((item) => demandaDoUsuario(item, usuarioAtual, catalog));
+  }, [appMode, demands, usuarioAtual, catalog]);
+
+  const loteVisivel = appMode === 'EXECUTOR' ? demandsDoExecutor : demands;
+  const insights = useMemo(() => gerarInsights(loteVisivel), [loteVisivel]);
+
+  const demandaPainel = useMemo(() => {
+    if (appMode !== 'EXECUTOR') return activeDemand;
+    if (activeDemand && demandsDoExecutor.some((item) => item.id === activeDemand.id)) {
+      return activeDemand;
+    }
+    return demandsDoExecutor[0] || null;
+  }, [appMode, activeDemand, demandsDoExecutor]);
 
   useEffect(() => {
     const idsAtuais = new Set(insights.map((item) => item.id));
@@ -189,27 +321,51 @@ export default function App() {
   }, [insights]);
 
   const abrirInsight = (aviso) => {
-    const demanda = demands.find((item) => item.id === aviso.demandId);
+    const demanda = loteVisivel.find((item) => item.id === aviso.demandId);
     setInsightAberto(false);
     if (demanda) handleSelectDemand(demanda);
   };
 
   const handleCatalogChange = (next, rename) => {
+    const anterior = catalog;
     setCatalog(next);
-    if (!rename) return;
-    setDemands((prev) => prev.map((demand) => (
-      demand[rename.field] === rename.from
-        ? { ...demand, [rename.field]: rename.to }
-        : demand
-    )));
-    setActiveDemand((prev) => (
-      prev && prev[rename.field] === rename.from
-        ? { ...prev, [rename.field]: rename.to }
-        : prev
-    ));
+    if (rename) {
+      setDemands((prev) => prev.map((demand) => (
+        demand[rename.field] === rename.from
+          ? { ...demand, [rename.field]: rename.to }
+          : demand
+      )));
+      setActiveDemand((prev) => (
+        prev && prev[rename.field] === rename.from
+          ? { ...prev, [rename.field]: rename.to }
+          : prev
+      ));
+    }
+    sincronizarCatalogo(anterior, next)
+      .then(carregarCatalogo)
+      .then((catalogo) => {
+        setCatalog(catalogo);
+        return recarregarDemandas();
+      })
+      .catch((erro) => {
+        setCatalog(anterior);
+        triggerToast(erro?.message || 'Não foi possível gravar o cadastro.');
+      });
   };
 
   const isCatalogNameUsed = (field, value) => demands.some((demand) => demand[field] === value);
+
+  if (carregandoSessao) {
+    return <div className="app-loading">Carregando…</div>;
+  }
+
+  if (!sessao) {
+    return <LoginView onEntrar={fazerLogin} />;
+  }
+
+  if (carregandoDados) {
+    return <div className="app-loading">Carregando demandas…</div>;
+  }
 
   return (
     <div className={menuAberto ? 'app-container menu-open' : 'app-container'}>
@@ -233,10 +389,11 @@ export default function App() {
         currentTab={currentTab}
         setCurrentTab={setCurrentTab}
         appMode={appMode}
-        setAppMode={setAppMode}
-        activeDemandsCount={demands.length}
+        setAppMode={trocarModo}
+        activeDemandsCount={loteVisivel.length}
         usuarioNome={usuarioAtual}
         onNavigate={() => setMenuAberto(false)}
+        onSair={fazerLogout}
       />
 
       {/* Main Workspace Area */}
@@ -330,28 +487,31 @@ export default function App() {
         {/* Dynamic View Router */}
         <main key={currentTab} className="view-enter">
           {currentTab === 'demandas' && (
-            <DemandasView 
-              demands={demands}
+            <DemandasAdmView
+              demands={loteVisivel}
+              catalog={catalog}
+              atividadesConfig={atividadesConfig}
+              isAdmin={appMode === 'ADM'}
               onSelectDemand={handleSelectDemand}
               onOpenNewDemandModal={() => setIsModalOpen(true)}
-              atividadesConfig={atividadesConfig}
-              executores={executorNames}
-              usuarioAtual={usuarioAtual}
+              onRecarregar={recarregarDemandas}
+              onToast={triggerToast}
             />
           )}
 
           {currentTab === 'executor' && (
             <PainelExecutorView 
-              demands={demands}
-              activeDemand={activeDemand}
+              demands={loteVisivel}
+              activeDemand={demandaPainel}
               setActiveDemand={setActiveDemand}
               onUpdateDemandStatus={handleUpdateDemandStatus}
+              onResetTempo={handleResetTempo}
             />
           )}
 
           {currentTab === 'dashboard' && (
             <DashboardView 
-              demands={demands}
+              demands={loteVisivel}
               onSelectDemand={handleSelectDemand}
               onOpenNewDemandModal={() => setIsModalOpen(true)}
               atividadesConfig={atividadesConfig}
@@ -360,7 +520,7 @@ export default function App() {
 
           {currentTab === 'cronograma' && (
             <CronogramaView 
-              demands={demands}
+              demands={loteVisivel}
               onSelectDemand={handleSelectDemand}
               atividadesConfig={atividadesConfig}
             />
@@ -382,9 +542,12 @@ export default function App() {
 
           {currentTab === 'fluxo' && (
             <FluxoEtapasView 
-              demands={demands}
+              demands={loteVisivel}
               onSelectDemand={handleSelectDemand}
               produtos={produtoNames}
+              atividades={catalog.atividades}
+              diagramDefault={catalog.diagramDefault}
+              atividadesConfig={atividadesConfig}
             />
           )}
 

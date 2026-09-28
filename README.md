@@ -1,16 +1,38 @@
-# React + Vite
+# Piu Mobile
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Painel de demandas de design e engenharia. Frontend Vite + API Express/Prisma/SQLite.
 
-Currently, two official plugins are available:
+## Como rodar
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+1. Copie `.env.example` para `.env` e troque `AUTH_SECRET` e as senhas do seed.
+2. Instale e crie o banco:
 
-## React Compiler
+```bash
+npm install
+npm run db:setup
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+3. Suba API e frontend em dois terminais:
 
-## Expanding the Oxlint configuration
+```bash
+npm run dev:api
+npm run dev
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+A API fica em `http://localhost:3001`. O Vite (`http://localhost:5173`) encaminha `/api` para ela.
+
+Para trazer o banco da origem, pare a API, copie o arquivo SQLite para `server/prisma/dev.db` e rode `npm run db:push` se o schema local tiver tabela a mais. O arquivo fica fora do git. Não grave senha no README.
+
+Login do seed: `ADMIN` / senha em `SEED_ADMIN_SENHA` (padrão `piumobile`). Colaboradores usam o mesmo valor de `SEED_USER_SENHA`.
+
+## Scripts
+
+| Script | Função |
+| --- | --- |
+| `npm run dev` | Frontend Vite |
+| `npm run dev:api` | API com `--watch` |
+| `npm run db:push` | Aplica o schema SQLite |
+| `npm run db:seed` | Catálogo, fluxo padrão e usuários |
+| `npm run smoke` | Paridade do fluxo (API no ar). Login em `SMOKE_LOGIN` / `SMOKE_SENHA` |
+| `npm run lint` | Oxlint |
+| `npm run build` | Build do frontend |

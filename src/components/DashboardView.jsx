@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { 
   TrendingUp, 
   Clock, 
@@ -8,6 +8,8 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { ATIVIDADES_CONFIG } from '../data/mockData';
+import { get } from '../api/client';
+import { statusParaUi } from '../api/adapters';
 
 export default function DashboardView({ 
   demands, 
@@ -15,14 +17,45 @@ export default function DashboardView({
   onOpenNewDemandModal,
   atividadesConfig = ATIVIDADES_CONFIG,
 }) {
-  const inProgressCount = demands.filter(d => d.status === 'Em andamento').length;
-  const liberatedCount = demands.filter(d => d.status === 'Liberada').length;
-  const completedCount = demands.filter(d => d.status === 'Concluída').length;
-  const pausedCount = demands.filter(d => d.status === 'Pausado').length;
-  const total = demands.length;
-  const eficiencia = total ? Math.round((completedCount / total) * 100) : 0;
+  const [painel, setPainel] = useState(null);
+
+  useEffect(() => {
+    let ativo = true;
+    get('/dashboard')
+      .then((dados) => {
+        if (ativo) setPainel(dados);
+      })
+      .catch(() => {
+        if (ativo) setPainel(null);
+      });
+    return () => {
+      ativo = false;
+    };
+  }, [demands]);
+
+  const localAndamento = demands.filter((d) => d.status === 'Em andamento').length;
+  const localLiberadas = demands.filter((d) => d.status === 'Liberada').length;
+  const localConcluidas = demands.filter((d) => d.status === 'Concluída').length;
+  const localPausadas = demands.filter((d) => d.status === 'Pausado').length;
+  const inProgressCount = painel?.kpis?.emAndamento ?? localAndamento;
+  const liberatedCount = painel?.kpis?.liberadas ?? localLiberadas;
+  const completedCount = painel?.kpis?.concluidas ?? localConcluidas;
+  const pausedCount = painel?.kpis?.pausadas ?? localPausadas;
+  const total = painel?.kpis?.total ?? demands.length;
+  const eficiencia = painel?.kpis?.eficiencia ?? (total ? Math.round((completedCount / total) * 100) : 0);
 
   const activityStats = useMemo(() => {
+    if (painel?.porAtividade) {
+      const linhas = painel.porAtividade.map((item) => ({
+        label: item.nome,
+        count: item.emAndamento + item.concluidas + item.atrasadas + item.paradas,
+        color: atividadesConfig[item.nome]?.color || '#94a3b8',
+      }));
+      const maximo = Math.max(1, ...linhas.map((item) => item.count));
+      return linhas
+        .map((item) => ({ ...item, max: maximo }))
+        .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+    }
     const contagem = new Map();
     demands.forEach((demanda) => {
       contagem.set(demanda.atividade, (contagem.get(demanda.atividade) || 0) + 1);
@@ -36,9 +69,16 @@ export default function DashboardView({
         max: maximo,
       }))
       .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
-  }, [demands, atividadesConfig]);
+  }, [painel, demands, atividadesConfig]);
 
   const executorRanks = useMemo(() => {
+    if (painel?.eficiencia) {
+      return painel.eficiencia.map((linha) => ({
+        name: linha.nome,
+        percent: linha.pct,
+        avatar: (linha.nome || '?').slice(0, 1),
+      }));
+    }
     const mapa = new Map();
     demands.forEach((demanda) => {
       const linha = mapa.get(demanda.executor) || { name: demanda.executor, total: 0, completed: 0 };
@@ -53,9 +93,17 @@ export default function DashboardView({
         avatar: linha.name.slice(0, 1),
       }))
       .sort((a, b) => b.percent - a.percent || b.completed - a.completed || a.name.localeCompare(b.name));
-  }, [demands]);
+  }, [painel, demands]);
 
-  const processAlerts = demands.filter(d => d.status === 'Pausado' || d.status === 'Em andamento').slice(0, 4);
+  const processAlerts = painel?.alertas
+    ? painel.alertas.slice(0, 4).map((item) => ({
+      id: item.codigo,
+      atividade: item.atividade,
+      produto: item.produto,
+      executor: item.executor,
+      status: statusParaUi(item.status),
+    }))
+    : demands.filter((d) => d.status === 'Pausado' || d.status === 'Em andamento').slice(0, 4);
 
   return (
     <div className="page-container">
@@ -226,11 +274,11 @@ export default function DashboardView({
               className="alert-item-card"
               role="button"
               tabIndex={0}
-              onClick={() => onSelectDemand(item)}
+              onClick={() => onSelectDemand(demands.find((demanda) => demanda.id === item.id) || item)}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault();
-                  onSelectDemand(item);
+                  onSelectDemand(demands.find((demanda) => demanda.id === item.id) || item);
                 }
               }}
             >

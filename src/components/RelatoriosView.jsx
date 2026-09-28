@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { CalendarRange, FileDown, LayoutDashboard, ListTodo } from 'lucide-react';
 import { rotuloBackup } from '../backups';
 import { baixarCronoanalise } from '../cronoanalise';
-import { baixarPlanilha, lerPlanilha, montarDemandas } from '../planilha';
+import { baixarPlanilha, importarPlanilha, lerPlanilha } from '../planilha';
 
 const VISIVEIS = 12;
 
@@ -12,8 +12,8 @@ function vazio(texto) {
 
 export default function RelatoriosView({
   demands,
-  atividades,
-  usuarioAtual,
+  atividades: _atividades,
+  usuarioAtual: _usuarioAtual,
   backups,
   onImportar,
   onAbrir,
@@ -54,8 +54,7 @@ export default function RelatoriosView({
     setLendo(true);
     setErro('');
     try {
-      const buffer = await arquivo.arrayBuffer();
-      const resultado = await lerPlanilha(buffer, atividades, usuarioAtual);
+      const resultado = await lerPlanilha(arquivo);
       setPrevia(resultado);
       if (!resultado.aceitas.length) {
         setErro('Nenhuma linha de TI, Gerência ou Documentação para terceiros entrou. Confira a aba Desenvolvimento.');
@@ -68,14 +67,21 @@ export default function RelatoriosView({
     }
   };
 
-  const importar = () => {
-    if (!previa?.aceitas.length) return;
-    const novas = montarDemandas(previa.aceitas, demands.map((demanda) => demanda.id));
-    onImportar(novas);
-    setPrevia(null);
-    setArquivo(null);
+  const importar = async () => {
+    if (!arquivo || !previa?.aceitas.length) return;
+    setLendo(true);
     setErro('');
-    if (inputRef.current) inputRef.current.value = '';
+    try {
+      const resultado = await importarPlanilha(arquivo);
+      onImportar(resultado);
+      setPrevia(null);
+      setArquivo(null);
+      if (inputRef.current) inputRef.current.value = '';
+    } catch (falha) {
+      setErro(falha.message || 'Não foi possível importar a planilha.');
+    } finally {
+      setLendo(false);
+    }
   };
 
   const linhas = previa?.aceitas.slice(0, VISIVEIS) || [];
@@ -183,7 +189,7 @@ export default function RelatoriosView({
                 <strong>Planilha das demandas</strong>
                 <p>Arquivo com o lote atual e o tempo apontado. Abre no Excel.</p>
               </div>
-              <button type="button" className="btn-secondary" onClick={() => baixarPlanilha(demands)}>
+              <button type="button" className="btn-secondary" onClick={() => baixarPlanilha()}>
                 <FileDown size={16} aria-hidden="true" />
                 Baixar planilha
               </button>
@@ -247,9 +253,10 @@ export default function RelatoriosView({
             type="button"
             className="btn-primary"
             onClick={() => {
-              const falha = onSalvarBackup();
-              setErroBackup(falha);
-              if (!falha) setPendente(null);
+              Promise.resolve(onSalvarBackup()).then((falha) => {
+                setErroBackup(falha || '');
+                if (!falha) setPendente(null);
+              });
             }}
           >
             Salvar backup
@@ -281,14 +288,16 @@ export default function RelatoriosView({
                         className="cad-text-btn danger"
                         onClick={() => {
                           if (pedido === 'restaurar') {
-                            onRestaurarBackup(backup);
-                            setPendente(null);
-                            setErroBackup('');
+                            Promise.resolve(onRestaurarBackup(backup)).then((falha) => {
+                              setErroBackup(falha || '');
+                              if (!falha) setPendente(null);
+                            });
                             return;
                           }
-                          const falha = onExcluirBackup(backup.id);
-                          setErroBackup(falha);
-                          if (!falha) setPendente(null);
+                          Promise.resolve(onExcluirBackup(backup.id)).then((falha) => {
+                            setErroBackup(falha || '');
+                            if (!falha) setPendente(null);
+                          });
                         }}
                       >
                         Confirmar

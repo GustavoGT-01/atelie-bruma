@@ -17,20 +17,58 @@ export default function CronogramaView({
   atividadesConfig = ATIVIDADES_CONFIG,
 }) {
   const [currentView, setCurrentView] = useState('Dia');
-  const [selectedDay, setSelectedDay] = useState('24 de Setembro, 2026');
+  const [selectedDay, setSelectedDay] = useState(() => new Date());
 
   const hours = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
 
-  const scheduleRows = [
-    { atividade: 'SOLICITAÇÃO COMERCIAL', demand: 'DEM-00010', color: '#F97316', startHour: 8, span: 2 },
-    { atividade: 'BLOCO 3D', demand: 'DEM-00029', color: '#3B82F6', startHour: 9, span: 2 },
-    { atividade: '3D ESTRUTURAL', demand: 'DEM-00162', color: '#06B6D4', startHour: 9, span: 2 },
-    { atividade: 'RECORTES', demand: 'DEM-00132', color: '#F59E0B', startHour: 10, span: 3 },
-    { atividade: 'LISTAGEM', demand: 'DEM-00133', color: '#10B981', startHour: 13, span: 4 },
-    { atividade: 'MODELAGEM', demand: 'DEM-00140', color: '#8B5CF6', startHour: 11, span: 3 },
-    { atividade: 'ENCAIXE', demand: 'DEM-00030', color: '#EC4899', startHour: 14, span: 2 },
-    { atividade: 'DOCUMENTAÇÃO PARA TERCEIROS', demand: 'DEM-00013', color: '#0284C7', startHour: 8, span: 2 },
-  ];
+  const moverDia = (passo) => {
+    setSelectedDay((atual) => {
+      const next = new Date(atual);
+      const delta = currentView === 'Mês' ? 30 : currentView === 'Semana' ? 7 : 1;
+      next.setDate(next.getDate() + passo * delta);
+      return next;
+    });
+  };
+
+  const dataDaDemanda = (texto) => {
+    const casado = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(texto || '').trim());
+    if (!casado) return null;
+    return new Date(Number(casado[3]), Number(casado[2]) - 1, Number(casado[1]));
+  };
+
+  const noPeriodo = (demanda) => {
+    const data = dataDaDemanda(demanda.solicitacao);
+    if (!data) return false;
+    const inicio = new Date(selectedDay);
+    inicio.setHours(0, 0, 0, 0);
+    const fim = new Date(inicio);
+    if (currentView === 'Semana') fim.setDate(fim.getDate() + 7);
+    else if (currentView === 'Mês') fim.setMonth(fim.getMonth() + 1);
+    else fim.setDate(fim.getDate() + 1);
+    return data >= inicio && data < fim;
+  };
+
+  const linhas = demands.filter(noPeriodo);
+  const agenda = (linhas.length ? linhas : demands.filter((item) => (
+    item.status === 'Liberada' || item.status === 'Em andamento' || item.status === 'Pausado'
+  ))).map((demanda, index) => {
+    const minutos = Number(String(demanda.tempoEstimado || '').match(/\d+/)?.[0] || 60);
+    const span = Math.min(6, Math.max(1, Math.round(minutos / 60)));
+    const startHour = 8 + (index % Math.max(1, 10 - span));
+    return {
+      demanda,
+      atividade: demanda.atividade,
+      color: atividadesConfig[demanda.atividade]?.color || '#94a3b8',
+      startHour,
+      span,
+    };
+  });
+
+  const rotuloDia = selectedDay.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  });
 
   return (
     <div className="page-container">
@@ -38,7 +76,7 @@ export default function CronogramaView({
       <div className="page-header">
         <div>
           <h1 className="page-title">Cronograma de Atividades</h1>
-          <p className="page-subtitle">Demandas de GUSTAVO — priorize por entrega e dependências.</p>
+          <p className="page-subtitle">Demandas do período — priorize por entrega e dependências.</p>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -58,8 +96,14 @@ export default function CronogramaView({
 
           {/* Date Picker Button */}
           <div className="btn-secondary" style={{ padding: '8px 14px' }}>
+            <button type="button" aria-label="Período anterior" onClick={() => moverDia(-1)}>
+              <ChevronLeft size={14} />
+            </button>
             <Calendar size={14} />
-            <span>{selectedDay}</span>
+            <span>{rotuloDia}</span>
+            <button type="button" aria-label="Próximo período" onClick={() => moverDia(1)}>
+              <ChevronRight size={14} />
+            </button>
           </div>
         </div>
       </div>
@@ -70,11 +114,11 @@ export default function CronogramaView({
         <div className="timeline-demands-pane">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <span style={{ fontSize: '0.82rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
-              Demandas Agendadas ({demands.length})
+              Demandas Agendadas ({agenda.length})
             </span>
           </div>
 
-          {demands.slice(0, 7).map((d) => {
+          {agenda.map(({ demanda: d }) => {
             const config = atividadesConfig[d.atividade] || { color: '#94a3b8' };
             return (
               <div
@@ -138,20 +182,18 @@ export default function CronogramaView({
 
           {/* Gantt Rows */}
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            {scheduleRows.map((row, idx) => {
-              // Calculate horizontal offset
-              const colStart = row.startHour - 7; // 8:00 maps to column 2
+            {agenda.map((row) => {
+              const colStart = row.startHour - 6;
+              const abrir = () => onSelectDemand(row.demanda);
               return (
-                <div key={idx} className="gantt-row">
+                <div key={row.demanda.id} className="gantt-row">
                   <div className="gantt-row-label">
                     {row.atividade}
                   </div>
-
-                  {/* Empty spacer up to start hour */}
-                  <div 
-                    style={{ 
-                      gridColumnStart: colStart, 
-                      gridColumnEnd: `span ${row.span}` 
+                  <div
+                    style={{
+                      gridColumnStart: colStart,
+                      gridColumnEnd: `span ${row.span}`,
                     }}
                   >
                     <div
@@ -162,20 +204,16 @@ export default function CronogramaView({
                         backgroundColor: row.color,
                         boxShadow: `0 0 12px ${row.color}55`
                       }}
-                      onClick={() => {
-                        const d = demands.find(item => item.id === row.demand) || demands[0];
-                        onSelectDemand(d);
-                      }}
+                      onClick={abrir}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
                           event.preventDefault();
-                          const d = demands.find(item => item.id === row.demand) || demands[0];
-                          onSelectDemand(d);
+                          abrir();
                         }
                       }}
-                      title={`Abrir ${row.demand}`}
+                      title={`Abrir ${row.demanda.id}`}
                     >
-                      {row.demand}
+                      {row.demanda.id}
                     </div>
                   </div>
                 </div>

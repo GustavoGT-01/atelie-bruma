@@ -1,0 +1,223 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Usuario {
+  id           String         @id @default(cuid())
+  nome         String
+  login        String         @unique
+  senhaHash    String
+  papel        String         @default("EXECUTOR") // ADMIN | PLANEJAMENTO | EXECUTOR
+  ativo        Boolean        @default(true)
+  // JSON: preferencias de UI por usuario (ex. filtro de status em Demandas)
+  preferenciasJson String     @default("{}")
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  demandas       Demanda[]
+  demandasCriadas Demanda[] @relation("DemandasCriadas")
+  apontamentos   Apontamento[]
+  notificacoes   Notificacao[]
+  tiposPadrao    TipoAtividade[] @relation("ExecutorPadrao")
+  tiposAtividade UsuarioTipoAtividade[]
+  backups        Backup[]
+}
+
+model Produto {
+  id        String    @id @default(cuid())
+  nome      String    @unique
+  ativo     Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  demandas  Demanda[]
+}
+
+// Catalogo auxiliar (controle/reconhecimento) — espelha Produto, sem efeito no fluxograma.
+model Modulacao {
+  id        String    @id @default(cuid())
+  nome      String    @unique
+  ativo     Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  demandas  Demanda[]
+}
+
+model TipoAtividade {
+  id                String         @id @default(cuid())
+  nome              String         @unique
+  ordemPadrao       Int            @default(0)
+  tempoEstimadoMin  Int            @default(60)
+  ativo             Boolean        @default(true)
+  // Se true, na criação desta atividade (ou como filha) exibe subprocessos A–L
+  temOpcoesListagem Boolean        @default(false)
+  // JSON: nomes de tipos que devem estar CONCLUIDA antes de liberar esta (ex. CADASTRO)
+  preRequisitos     String         @default("[]")
+  // Cor hex para KPIs, fila, diagrama (#RRGGBB)
+  cor               String         @default("#A3A3A3")
+  executorPadraoId  String?
+  executorPadrao    Usuario?       @relation("ExecutorPadrao", fields: [executorPadraoId], references: [id], onDelete: SetNull)
+  createdAt         DateTime       @default(now())
+  demandas          Demanda[]
+  sucessores        TipoSucessor[] @relation("SucessorOrigem")
+  predecessores     TipoSucessor[] @relation("SucessorDestino")
+  colaboradores     UsuarioTipoAtividade[]
+}
+
+model UsuarioTipoAtividade {
+  id              String        @id @default(cuid())
+  usuarioId       String
+  tipoAtividadeId String
+  usuario         Usuario       @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  tipoAtividade   TipoAtividade @relation(fields: [tipoAtividadeId], references: [id], onDelete: Cascade)
+
+  @@unique([usuarioId, tipoAtividadeId])
+}
+
+// Sequencia padrao: origem -> possiveis proximas atividades
+model TipoSucessor {
+  id        String        @id @default(cuid())
+  origemId  String
+  destinoId String
+  ordem     Int           @default(0)
+  origem    TipoAtividade @relation("SucessorOrigem", fields: [origemId], references: [id], onDelete: Cascade)
+  destino   TipoAtividade @relation("SucessorDestino", fields: [destinoId], references: [id], onDelete: Cascade)
+
+  @@unique([origemId, destinoId])
+}
+
+model Demanda {
+  id               String    @id @default(cuid())
+  codigo           String    @unique
+  especificacao    String
+  observacoes      String    @default("")
+  prioridade       Int       @default(3)
+  status           String    @default("PENDENTE") // PENDENTE_APROVACAO | AGUARDANDO | LIBERADA | EM_ANDAMENTO | PAUSADO | CONCLUIDA | REJEITADA (PENDENTE=legado)
+  conferida        Boolean   @default(false)
+  dataSolicitacao  DateTime?
+  dataConclusao    DateTime?
+  tempoEstimadoMin Int       @default(60)
+  progressoPct     Int       @default(0)
+  // JSON: etapas do fluxo marcadas na criação
+  etapasSelecionadas String  @default("[]")
+  // JSON: { "LISTAGEM": "userId", "CADASTRO": "userId", ... }
+  executoresPorEtapa String  @default("{}")
+  // Árvore do produto — filhas apontam para a demanda raiz (3D ou inicial)
+  raizId           String?
+  raiz             Demanda?  @relation("DemandaRaiz", fields: [raizId], references: [id], onDelete: SetNull)
+  filhasDaRaiz     Demanda[] @relation("DemandaRaiz")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  criadoPorId     String?
+  criadoPor       Usuario?       @relation("DemandasCriadas", fields: [criadoPorId], references: [id], onDelete: SetNull)
+  executorId      String?
+  executor        Usuario?       @relation(fields: [executorId], references: [id])
+  produtoId       String?
+  produto         Produto?       @relation(fields: [produtoId], references: [id])
+  modulacaoId     String?
+  modulacao       Modulacao?     @relation(fields: [modulacaoId], references: [id])
+  tipoAtividadeId String?
+  tipoAtividade   TipoAtividade? @relation(fields: [tipoAtividadeId], references: [id])
+
+  apontamentos    Apontamento[]
+  depsComoOrigem  Dependencia[] @relation("DepOrigem")
+  depsComoDestino Dependencia[] @relation("DepDestino")
+  notificacoes    Notificacao[]
+  opcoes          DemandaOpcao[]
+}
+
+model FluxoOpcao {
+  id               String         @id @default(cuid())
+  codigo           String         @unique
+  nome             String
+  tempoEstimadoMin Int            @default(30)
+  ativo            Boolean        @default(true)
+  ordem            Int            @default(0)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  demandas         DemandaOpcao[]
+}
+
+model DemandaOpcao {
+  id        String        @id @default(cuid())
+  demandaId String
+  opcaoId   String
+  // PENDENTE | EM_ANDAMENTO | PAUSADO | CONCLUIDA
+  status    String        @default("PENDENTE")
+  demanda   Demanda       @relation(fields: [demandaId], references: [id], onDelete: Cascade)
+  opcao     FluxoOpcao    @relation(fields: [opcaoId], references: [id], onDelete: Cascade)
+  apontamentos Apontamento[]
+
+  @@unique([demandaId, opcaoId])
+}
+
+model Dependencia {
+  id         String    @id @default(cuid())
+  liberada   Boolean   @default(false)
+  liberadaEm DateTime?
+  origemId   String
+  destinoId  String
+  origem     Demanda   @relation("DepOrigem", fields: [origemId], references: [id], onDelete: Cascade)
+  destino    Demanda   @relation("DepDestino", fields: [destinoId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now())
+
+  @@unique([origemId, destinoId])
+}
+
+model Apontamento {
+  id                 String        @id @default(cuid())
+  demandaId          String
+  demanda            Demanda       @relation(fields: [demandaId], references: [id], onDelete: Cascade)
+  // Subprocesso LISTAGEM (A-L); null = apontamento da demanda inteira
+  demandaOpcaoId     String?
+  demandaOpcao       DemandaOpcao? @relation(fields: [demandaOpcaoId], references: [id], onDelete: SetNull)
+  usuarioId          String
+  usuario            Usuario       @relation(fields: [usuarioId], references: [id])
+  dataHoraInicio     DateTime
+  dataHoraFim        DateTime?
+  tempoTotalSegundos Int           @default(0)
+  motivoParada       String? // SETUP | MANUTENCAO | FALTA_MATERIAL | AGUARDANDO_INFO | REUNIAO | OUTRO
+  ativo              Boolean       @default(true)
+  createdAt          DateTime      @default(now())
+}
+
+model Notificacao {
+  id        String   @id @default(cuid())
+  usuarioId String
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  demandaId String?
+  demanda   Demanda? @relation(fields: [demandaId], references: [id], onDelete: SetNull)
+  mensagem  String
+  lida      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+// Snapshot do fluxo padrao (diagrama + pre-requisitos) salvo pelo admin.
+model ConfigApp {
+  id              String   @id @default("app")
+  fluxoPadraoJson String   @default("")
+  atualizadoEm    DateTime @default(now())
+}
+
+// Backup do lote e do catalogo. Substitui o localStorage do prototipo.
+model Backup {
+  id            String   @id @default(cuid())
+  criadoEm      DateTime @default(now())
+  demandasCount Int      @default(0)
+  tiposCount    Int      @default(0)
+  dadosJson     String
+  criadoPorId   String?
+  criadoPor     Usuario? @relation(fields: [criadoPorId], references: [id], onDelete: SetNull)
+}
+
+
+
+
+
+
+
+
+

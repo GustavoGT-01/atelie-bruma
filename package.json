@@ -5,12 +5,27 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:api": "node --watch server/index.js",
+    "start:api": "node server/index.js",
     "build": "vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "db:push": "prisma db push --schema server/prisma/schema.prisma",
+    "db:seed": "node server/prisma/seed.js",
+    "db:setup": "npm run db:push && npm run db:seed",
+    "smoke": "node server/scripts/smoke.mjs",
+    "postinstall": "prisma generate --schema server/prisma/schema.prisma"
   },
   "dependencies": {
+    "@prisma/client": "^6.19.0",
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^17.2.3",
+    "exceljs": "^4.4.0",
+    "express": "^5.1.0",
+    "jose": "^6.2.12",
     "lucide-react": "^1.48.0",
+    "multer": "^2.0.2",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
@@ -19,6 +34,7 @@
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
     "oxlint": "^1.81.0",
+    "prisma": "^6.19.0",
     "vite": "^8.3.0"
   }
 }
